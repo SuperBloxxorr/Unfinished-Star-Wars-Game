@@ -1,0 +1,430 @@
+--Server Side
+--@SuperBloxxor, 7/3/16
+--This is a very old script, so it isn't the neatest
+
+
+print('Preparing server util module')
+local util = {}; do
+	local INSERT 			= table.insert
+	local BC 				= BrickColor.new
+	
+	local Players 			= game:GetService('Players')
+
+	function util:ReturnTeamTable(color)
+		local plrTable = Players:GetPlayers()
+		local tTable = {}
+		
+		for _,player in pairs(plrTable) do
+			if player.TeamColor == color then
+				INSERT(tTable,player)
+			end
+		end
+		
+		return tTable
+	end
+
+	function util:ReturnPlayerCount()
+		local plrTable = Players:GetPlayers()
+		return #plrTable
+	end
+	
+	function util:ReturnTeamCount(color)
+		local plrTable = Players:GetPlayers()
+		local count = 0
+		
+		for _,player in pairs(plrTable) do
+			if player.TeamColor == color then
+				count = count + 1
+			end
+		end
+		
+		return count
+	end
+	
+	function util:ReturnRequiredCount()
+		local required = 12
+		local teamCount = util:ReturnTeamCount(BC('Bright blue'))
+		
+		local count = required - teamCount
+		if count < 0 then
+			return 0
+		else
+			return count
+		end
+	end
+end
+
+
+
+
+
+
+print('Preparing cleints module')
+local clients = {}; do
+	local ServerStorage 	= game:GetService('ServerStorage')
+	local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	
+	local REMOTE_FUNCTION	= ReplicatedStorage:WaitForChild('RemoteFunction')
+	local REMOTE_EVENT		= ReplicatedStorage:WaitForChild('RemoteEvent')
+	
+	local GROUPID			= 2838065
+	
+	local TEAM_COLORS = { --(team,score)
+		{'Neutral',BrickColor.new('White')};
+		{'Rebels',BrickColor.new('Bright red')};
+		{'Imperials',BrickColor.new('Bright blue')};
+	}
+	
+	
+	local function Morph(PLAYER)
+		if PLAYER:IsInGroup(GROUPID) then
+			
+		else
+			
+		end
+	end	
+	
+	function clients:PublicEvent(input,...)
+		REMOTE_EVENT:FireAllClients(input,...)
+	end
+	
+	function clients:PrivateEvent(player,input,...)
+		REMOTE_EVENT:FireClient(player,input,...)
+	end
+	
+	function clients:PublicFunction(input,...)
+		local players = game.Players:GetPlayers()
+		for _,player in pairs(players) do
+			REMOTE_FUNCTION:InvokeClient(player,input,...)
+		end		
+	end	
+	
+	function clients:PrivateFunction(player,input,...)
+		REMOTE_FUNCTION:InvokeClient(player,input,...)
+	end
+	
+		
+	--TODO: check if player is in main menu, do not teleport if true
+	function clients:MoveToSpawns()
+		local players = game.Players:GetPlayers()
+		for _,player in pairs(players) do
+			local CHAR = player.Character
+			if player.TeamColor == TEAM_COLORS[2][2] then
+				local spns = game.Workspace.RebelSpawn:GetChildren()
+				local rSpawn = spns[math.random(#spns)]
+				CHAR:SetPrimaryPartCFrame(rSpawn.CFrame + Vector3.new(0,3,0))
+			else
+				local spns = game.Workspace.ImperialSpawn:GetChildren()
+				local iSpawn = spns[math.random(#spns)]
+				CHAR:SetPrimaryPartCFrame(iSpawn.CFrame + Vector3.new(0,3,0))
+			end
+		end		
+	end	
+	
+	game.Players.PlayerAdded:connect(function(PLAYER)
+		PLAYER.CanLoadCharacterAppearance = false
+		if PLAYER:IsInGroup(GROUPID) then
+			PLAYER.TeamColor = TEAM_COLORS[2][2]
+		else
+			PLAYER.TeamColor = TEAM_COLORS[3][2]
+		end
+		
+		PLAYER:LoadCharacter()
+	end)
+end
+
+
+
+
+
+
+print('Preparing server game module')
+local system = {}; do
+	local INSERT 			= table.insert
+	local REMOVE			= table.remove
+	local BC				= BrickColor.new
+	local CR				= coroutine.resume
+	local CC				= coroutine.create
+	
+	local ServerStorage 	= game:GetService('ServerStorage')
+	local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	local Players 			= game:GetService('Players')
+	
+	local REMOTE_FUNCTION	= ReplicatedStorage:WaitForChild('RemoteFunction')
+	local REMOTE_EVENT		= ReplicatedStorage:WaitForChild('RemoteEvent')
+	local TERMINALS 		= ServerStorage:WaitForChild('Terminals')
+	local W_TERMINALS 		= game.Workspace:WaitForChild('Terminals')
+
+	local connections 		= {}
+	local gameLoops 		= {}
+	
+	local GROUPID			= 2838065
+	
+	local GAME = { --(game active,round,owner)
+		false,
+		1,
+		'Neutral',
+	}
+	
+	local TEAMS = { --(team,score,capture time,Color)
+		{'Neutral',nil,nil,BC('White')};
+		{'Rebels',0,5,BC('Bright red')};
+		{'Imperials',0,5,BC('Bright blue')};
+	}
+	
+	local function ResetRound()
+		GAME[3] = 'Neutral'
+		TEAMS[2][3] = 5
+		TEAMS[3][3] = 5
+	end
+	
+	local function ResetGame()
+		GAME[1],GAME[2],GAME[3] = false,1,'Neutral'
+		TEAMS[2][2],TEAMS[2][3] = 0,5
+		TEAMS[3][2],TEAMS[3][3] = 0,5
+	end	
+	
+	function BreakConnections()
+		for _,index in pairs(connections) do
+			index:disconnect()
+		end
+		connections = {}
+	end	
+	
+	function SpawnTerminal()
+		local terms	= TERMINALS:GetChildren()
+		local randomTerm = terms[math.random(#terms)]
+
+		local newTerminal = randomTerm:Clone()
+		newTerminal.Parent = game.Workspace:WaitForChild('Terminals')
+		
+		return newTerminal
+	end
+	
+	function system:Stats()
+		local new = {GAME,TEAMS}
+		return new
+	end
+	
+	function system:NewGame()		
+		clients:PublicEvent('NewGame')
+		clients:PublicEvent('ServerNotification','Required players reached, starting game','Info')
+		GAME[1] = true
+		
+		W_TERMINALS:ClearAllChildren()
+		local newTerminal = SpawnTerminal()
+
+		local core = spawn(function()
+			while wait() do
+				wait(0.1)
+				local returnCount = function()
+					local rebelT = util:ReturnTeamTable(TEAMS[2][4])
+					local imperialT = util:ReturnTeamTable(TEAMS[3][4])
+					
+					local rebelRadius = 0
+					local imperialRadius = 0
+					
+					for index,player in pairs(rebelT) do
+						local distance = (newTerminal.Point.Position - player.Character:WaitForChild('Torso').Position).magnitude
+						if distance < 50 then
+							rebelRadius = rebelRadius + 1
+						end
+					end
+					
+					for index,player in pairs(imperialT) do
+						local distance = (newTerminal.Point.Position - player.Character:WaitForChild('Torso').Position).magnitude
+						if distance < 50 then
+							imperialRadius = imperialRadius + 1
+						end
+					end
+					return{rebelRadius,imperialRadius} 
+				end
+				
+				local rebelCaptureTime = 0
+				local imperialCaptureTime = 0
+				local plrs = returnCount()					
+				
+				if plrs[1] > plrs[2] and GAME[3] ~= 'Rebels' then -- NOTE: REBEL CAPTURE EVENT!!!!!!!!!!!!!!!!!!!!!!!!!!
+					clients:PublicEvent('ServerNotification','Rebels are capturing the terminal','Warning')
+					clients:PublicEvent('CaptureAttempt','Rebel')
+					repeat
+						wait(0.05)
+						plrs = returnCount()
+						if plrs[1] < plrs[2] or plrs[1] <= 0 then
+							clients:PublicEvent('CaptureCancel')
+							break
+						else
+							rebelCaptureTime = rebelCaptureTime + 0.05
+							local yieldPercent = (rebelCaptureTime/20)*100
+							clients:PublicEvent('UpdateCapture','Rebel',yieldPercent)
+						end
+					until rebelCaptureTime >= 20 or plrs[1] < plrs[2]
+					
+					if rebelCaptureTime >= 20 then
+						rebelCaptureTime = 0
+						GAME[3] = 'Rebels'
+						clients:PublicEvent('CaptureSuccess','Rebel')
+						clients:PublicEvent('ServerNotification','Rebels have captured the terminal!!!','Warning')
+						local captureHold = coroutine.create(function()
+							repeat
+								wait(1)
+								TEAMS[2][3] = TEAMS[2][3] - 1
+								clients:PublicEvent('UpdateHoldTime',{TEAMS[2][3],TEAMS[3][3]})
+							until TEAMS[2][3] == 0 or GAME[3] ~= 'Rebels'
+							if TEAMS[2][3] == 0 then
+								if TEAMS[2][2] == 3 then --if the game is over, 3 instead of 4 due to the new round win
+									clients:PublicEvent('EndGame','Rebels',GAME[2])
+									wait(9)
+									clients:MoveToSpawns()
+									ResetGame()
+								else
+									clients:PublicEvent('NewRound','Rebels',GAME[2])
+									wait(9)
+									clients:MoveToSpawns()
+									GAME[2] = GAME[2] + 1
+									TEAMS[2][2] = TEAMS[2][2] + 1
+									ResetRound()
+									W_TERMINALS:ClearAllChildren()
+									newTerminal = SpawnTerminal()
+								end
+							end
+						end)
+						coroutine.resume(captureHold)
+					elseif plrs[1] < plrs[2] or plrs[1] <= 0 then
+						rebelCaptureTime = 0
+						clients:PublicEvent('CaptureCancel')
+					end
+				elseif plrs[1] < plrs[2] and GAME[3] ~= 'Imperials' then -- NOTE: IMPERIAL CAPTURE EVENT!!!!!!!!!!!!!!!!!!!!!!!!!!
+					clients:PublicEvent('ServerNotification','Imperials are capturing the terminal','Warning')
+					clients:PublicEvent('CaptureAttempt','Imperial')
+					repeat
+						wait(0.05)
+						plrs = returnCount()
+						if plrs[1] > plrs[2] or plrs[2] <= 0 then
+							clients:PublicEvent('CaptureCancel')
+							break
+						else
+							imperialCaptureTime = imperialCaptureTime + 0.05
+							local yieldPercent = (imperialCaptureTime/20)*100
+							clients:PublicEvent('UpdateCapture','Imperial',yieldPercent)
+						end
+					until imperialCaptureTime >= 20 or plrs[1] > plrs[2]
+					
+					if imperialCaptureTime >= 20 then
+						imperialCaptureTime = 0
+						GAME[3] = 'Imperials'
+						clients:PublicEvent('CaptureSuccess','Imperial')
+						clients:PublicEvent('ServerNotification','Imperials have captured the terminal!!!','Warning')
+						local captureHold = coroutine.create(function()							
+							repeat
+								wait(1)
+								TEAMS[3][3] = TEAMS[3][3] - 1
+								clients:PublicEvent('UpdateHoldTime',{TEAMS[2][3],TEAMS[3][3]})
+							until TEAMS[3][3] == 0 or GAME[3] ~= 'Imperials'
+							if TEAMS[3][3] == 0 then
+								if TEAMS[3][2] == 3 then --if the game is over, 3 instead of 4 due to the new round win
+									print('TODO: end game event')
+									clients:PublicEvent('EndGame','Imperials',GAME[2])
+									wait(9)
+									clients:MoveToSpawns()
+									ResetGame()
+								else
+									clients:PublicEvent('NewRound','Imperials',GAME[2])
+									wait(9)
+									clients:MoveToSpawns()
+									GAME[2] = GAME[2] + 1
+									TEAMS[3][2] = TEAMS[3][2] + 1
+									ResetRound()
+									W_TERMINALS:ClearAllChildren()
+									newTerminal = SpawnTerminal()
+								end
+							end
+						end)
+						coroutine.resume(captureHold)
+					elseif plrs[1] > plrs[2] then
+						imperialCaptureTime = 0
+						clients:PublicEvent('CaptureCancel')
+					end
+				end
+			end
+		end)
+	end
+	
+	local GameHandler = CR(CC(function()
+		while wait(1) do
+			if not GAME[1] then
+				repeat
+					wait(1) 
+				until #game.Players:GetPlayers() >= 1 --util:ReturnRequiredCount() == 12
+				clients:PublicEvent('ServerNotification','New game starting in 10 seconds','Info')
+				clients:PublicEvent('DebugNotification','Server testing mode enabled')
+				
+				wait(10)
+				system:NewGame()
+			end
+		end
+	end))
+	
+	game.Players.PlayerAdded:connect(function(player)
+		clients:PublicEvent('ServerNotification',(player:IsInGroup(GROUPID) and 'Rebel ' or 'Imperial ')..player.Name..' has joined the game','Hint')
+		if not GAME[1] then
+			local count = util:ReturnRequiredCount()
+			clients:PublicEvent('ServerNotification','Waiting for '..count..' more Imperial players','Info')
+		end
+	end)
+	
+	game.Players.PlayerRemoving:connect(function(player)
+		clients:PublicEvent('ServerNotification',(player:IsInGroup(GROUPID) and 'Rebel ' or 'Imperial ')..player.Name..' has disconnected','Hint')
+		if not GAME[1] then
+			local count = util:ReturnRequiredCount()
+			clients:PublicEvent('ServerNotification','Waiting for '..count..' more Imperial players','Info')
+		end
+	end)
+end
+
+
+
+
+
+
+print('Preparing server replication module')
+do
+	local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	local TeleportService	= game:GetService('TeleportService')
+	
+	local REMOTE_FUNCTION	= ReplicatedStorage:WaitForChild('RemoteFunction')
+	local REMOTE_EVENT		= ReplicatedStorage:WaitForChild('RemoteEvent')
+	
+	local SERVER_FUNCTION = {
+		["RequestStats"] = function(player)
+			local stats = system:Stats()
+			return stats
+		end,
+		["RequestRequiredPlayers"] = function(player)
+			local count = util:ReturnRequiredCount()
+			return count
+		end,
+	}
+	
+	local SERVER_EVENT = {
+		["LockPlr"] = function(player,bool)
+			local HUMANOID = player.Character:WaitForChild('Humanoid')
+			HUMANOID.WalkSpeed = bool and 0 or 100 --16 debug
+			HUMANOID.JumpPower = bool and 0 or 50
+		end,
+	}
+	
+	function REMOTE_FUNCTION.OnServerInvoke(player,tag,...)
+		local port = assert(SERVER_FUNCTION[tag], 'Invalid port')(player,...)
+		return port
+	end
+	
+	REMOTE_EVENT.OnServerEvent:connect(function(player,tag,...)
+		local port = assert(SERVER_EVENT[tag], 'Invalid port')(player,...)
+	end)
+end
+
+
+
+
+
