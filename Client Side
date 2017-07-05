@@ -1,0 +1,437 @@
+--Client Side
+--@SuperBloxxor, 7/3/16
+
+
+print('Preparing client util module')
+local util = {}; do
+	local INSERT 			= table.insert
+	local BC 				= BrickColor.new
+	local CC				= coroutine.create
+	local CR 				= coroutine.resume
+	
+	local RunService 		= game:GetService('RunService')
+	
+	local CAMERA 			= game.Workspace.CurrentCamera
+	local PLAYER 			= game.Players.LocalPlayer
+	
+	local BLIND 			= Instance.new('ColorCorrectionEffect',CAMERA)	
+	
+	function util.TweenCam(c1,f1,step,FOV,Roll)
+		local c0,f0,fv0,r0 = CAMERA.CFrame,CAMERA.Focus,CAMERA.FieldOfView,CAMERA:GetRoll()
+		CR(CC(function()
+			for i = -90,90,step do
+				local r = ((math.sin(math.rad(i))+1)/2)
+				CAMERA.CFrame = CFrame.new(c0.p:lerp(c1.p,r))
+				CAMERA.Focus = CFrame.new(f0.p:lerp(f1.p,r))
+				CAMERA.FieldOfView = (Vector3.new(fv0,0,0):Lerp(Vector3.new(FOV,0,0),r).X)
+				CAMERA:SetRoll(Vector3.new(r0,0,0):Lerp(Vector3.new(Roll,0,0),r).X)
+				CAMERA.CFrame = CFrame.new(CAMERA.CFrame.p,CAMERA.Focus.p)
+				RunService.RenderStepped:wait()
+			end
+		end))
+	end
+	
+	function util.Blind(fade)
+		local action = spawn(function()
+			if fade then
+				for i = 1, 100 do
+					BLIND.Brightness = BLIND.Brightness - 0.01
+					RunService.RenderStepped:wait()
+				end
+			else
+				for i = 1, 100 do
+					BLIND.Brightness = BLIND.Brightness + 0.01
+					RunService.RenderStepped:wait()
+				end
+			end
+		end)
+	end
+end
+
+
+
+
+
+
+print('Preparing event module')
+local server = {}; do
+	local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	
+	local REMOTE_FUNCTION	= ReplicatedStorage:WaitForChild('RemoteFunction')
+	local REMOTE_EVENT		= ReplicatedStorage:WaitForChild('RemoteEvent')
+	
+	function server:RequestEvent(input,...)
+		REMOTE_EVENT:FireServer(input,...)
+	end
+	
+	function server:RequestFunction(input,...)
+		local output = REMOTE_FUNCTION:InvokeServer(input,...)
+		return output
+	end
+end
+
+
+
+
+
+
+print('Preparing client manager module')
+local client = {}; do
+	local INSERT 			= table.insert
+	local REMOVE 			= table.remove
+	local CR				= coroutine.resume
+	local CC 				= coroutine.create
+	
+	local StarterGui 		= game:GetService('StarterGui')
+	local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	local RunService 		= game:GetService('RunService')
+	
+	local CAMERA 			= game.Workspace.CurrentCamera
+	local PLAYER 			= game.Players.LocalPlayer
+	local HUMANOID 			= PLAYER.Character:WaitForChild('Humanoid')
+	
+	local REMOTE_FUNCTION	= ReplicatedStorage:WaitForChild('RemoteFunction')
+	local REMOTE_EVENT		= ReplicatedStorage:WaitForChild('RemoteEvent')
+	
+	local GUI 				= script.Parent
+	local COUNTDOWN_FRAME 	= GUI:WaitForChild('Countdown')
+	local TERMINAL_FRAME	= GUI:WaitForChild('Terminal')
+	local INTRO_FRAME		= GUI:WaitForChild('GameIntro')
+	local INFO_FRAME		= GUI:WaitForChild('GameInfo')
+	local WAIT_FRAME		= GUI:WaitForChild('Waiting')
+	
+	local TERMINAL_STATS 	= TERMINAL_FRAME:WaitForChild('TerminalStats')
+	
+	local terminalConnections = {}
+	local interfaceConnections = {}
+	local loops = {}
+	
+	
+	local function FocusCamera(object,fov)
+		if not object:IsA("Humanoid") then
+			CAMERA.CameraType = Enum.CameraType.Scriptable
+			CAMERA.CameraSubject = object
+			CAMERA.CFrame = object.CFrame
+			CAMERA.FieldOfView = fov
+		else
+			CAMERA.CameraType = Enum.CameraType.Custom
+			CAMERA.CameraSubject = object
+			CAMERA.FieldOfView = fov
+		end
+	end
+	
+	local function ViewCamera()
+		local cams = game.Workspace:WaitForChild('Cameras'):GetChildren()
+		local newCam = cams[math.random(#cams)]
+		FocusCamera(newCam,90)
+	end
+	
+	local function CountDown()
+		for i = 0, 5 do
+			COUNTDOWN_FRAME.TextLabel.Text = 5 - i
+			COUNTDOWN_FRAME.TextLabel.TextTransparency = 0
+			wait(.7)
+			for i = 1,10 do
+				wait(0.03)
+				COUNTDOWN_FRAME.TextLabel.TextTransparency = COUNTDOWN_FRAME.TextLabel.TextTransparency + 0.1
+			end
+		end
+	end	
+
+	local function BreakConnections(TABLE)
+		for index,value in pairs(TABLE) do
+			value:disconnect()
+		end
+		TABLE = {}
+	end
+	
+	function client:TerminalGui(bool)
+		local Terminal = game.Workspace:WaitForChild('Terminals').Terminal
+		local Gui = TERMINAL_FRAME:WaitForChild('TerminalGui')
+		
+		if bool then
+			Gui.Visible = true
+			local staticSizeX = Gui.AbsoluteSize.X
+			local staticSizeY = Gui.AbsoluteSize.Y
+				
+			INSERT(terminalConnections,game:GetService('RunService').RenderStepped:connect(function()
+				local point,visible = CAMERA:WorldToScreenPoint(Terminal.Point.Position)
+				if not visible then
+					Gui.Visible = false
+				else
+					Gui.Visible = true
+					Gui.Position = UDim2.new(0,point.X - 10,0,point.Y - 10)
+				end
+			end))
+			INSERT(loops,coroutine.resume(coroutine.create(function() 
+				while true do
+					for i = 1, 3 do
+						Gui.BorderSizePixel = i
+						RunService.RenderStepped:wait()
+					end
+					for i = 1, 3 do
+						Gui.BorderSizePixel = 3 - i
+						RunService.RenderStepped:wait()
+					end
+				end
+			end)))
+		else
+			BreakConnections(terminalConnections)
+			Gui.Visible = false
+		end
+	end
+	
+	function client:UpdateStats()
+		local stats = server:RequestFunction('RequestStats')
+		TERMINAL_STATS.Owner.Text = string.upper(stats[1][3])
+		TERMINAL_STATS.RebelScore.Text = stats[2][2][2]
+		TERMINAL_STATS.ImperialsScore.Text = stats[2][3][2]
+		
+		for index,value in pairs(stats[2]) do
+			if value[1] == stats[1][3] then
+				TERMINAL_STATS.Owner.TextColor3 = value[4].Color
+			end
+		end
+
+		if stats[1][1] then
+			client:TerminalGui(true)
+		end
+	end	
+	
+	function client:NewGame()
+		CR(CC(function()
+			
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+			server:RequestEvent('L'..'o'..'c'..'k'..'P'..'l'..'r',true)
+			INTRO_FRAME.Visible = true
+			
+			for i = 1, 4 do
+
+				ViewCamera()
+				wait(3)
+			end
+			
+			INTRO_FRAME.Visible = false
+			TERMINAL_FRAME.Visible = true
+			
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
+			FocusCamera(HUMANOID,70)
+			client:TerminalGui(true)
+			COUNTDOWN_FRAME.Visible = true
+			CountDown()
+			wait(1)
+			COUNTDOWN_FRAME.Visible = false
+			server:RequestEvent('L'..'o'..'c'..'k'..'P'..'l'..'r',false)
+		end))
+	end
+		
+	function client:NewRound(team,round) --this is where i stop caring
+		CR(CC(function()
+			client:UpdateStats()
+			local Terminal = game.Workspace:WaitForChild('Terminals').Terminal
+			server:RequestEvent('L'..'o'..'c'..'k'..'P'..'l'..'r',true)
+			FocusCamera(HUMANOID,90)
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+			CAMERA.CameraType = Enum.CameraType.Scriptable
+			util.TweenCam(Terminal.cam.CFrame,Terminal.Point.CFrame,1,90,0)
+			wait(2)
+			TERMINAL_FRAME.Visible = false
+			client:TerminalGui(false)
+			INFO_FRAME:WaitForChild('Txt').Text = string.upper(team)..' HELD THE TERMINAL FOR 5 MINUTES'
+			INFO_FRAME:WaitForChild('Info').Text = string.upper(team)..' WIN ROUND '..round
+			INFO_FRAME.Visible = true
+			wait(5)
+			util.Blind(true)
+			wait(2)
+			FocusCamera(HUMANOID,70)
+			util.Blind(false)
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
+			TERMINAL_STATS.RebelScore.Time.Text = '5:00'
+			TERMINAL_STATS.ImperialsScore.Time.Text = '5:00'
+			client:UpdateStats()
+			INFO_FRAME.Visible = false
+			TERMINAL_FRAME.Visible = true
+			COUNTDOWN_FRAME.Visible = true
+			CountDown()
+			COUNTDOWN_FRAME.Visible = false
+			server:RequestEvent('L'..'o'..'c'..'k'..'P'..'l'..'r',false)
+		end))
+	end
+	
+	function client:EndGame(team,round)
+		CR(CC(function()
+			client:UpdateStats()
+			local Terminal = game.Workspace:WaitForChild('Terminals').Terminal
+			server:RequestEvent('L'..'o'..'c'..'k'..'P'..'l'..'r',true)
+			FocusCamera(HUMANOID,90)
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+			CAMERA.CameraType = Enum.CameraType.Scriptable
+			util.TweenCam(Terminal.cam.CFrame,Terminal.Point.CFrame,1,90,0)
+			wait(2)
+			TERMINAL_FRAME.Visible = false
+			client:TerminalGui(false)
+			INFO_FRAME:WaitForChild('Txt').Text = string.upper(team)..' HAVE WON THE GAME WITH 4 WINS!'
+			INFO_FRAME:WaitForChild('Info').Text = 'GAME OVER'
+			INFO_FRAME.Visible = true
+			wait(5)
+			util.Blind(true)
+			wait(2)
+			FocusCamera(HUMANOID,70)
+			util.Blind(false)
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
+			TERMINAL_STATS.RebelScore.Time.Text = '5:00'
+			TERMINAL_STATS.ImperialsScore.Time.Text = '5:00'
+			client:UpdateStats()
+			INFO_FRAME.Visible = false
+			TERMINAL_FRAME.Visible = true
+			server:RequestEvent('L'..'o'..'c'..'k'..'P'..'l'..'r',false)
+		end))
+	end	
+	
+	function client:OnSpawn()
+		local stats = server:RequestFunction('RequestStats')
+		local count = server:RequestFunction('RequestRequiredPlayers')
+		if stats[1][1] then --if the game is active
+			TERMINAL_FRAME.Visible = true
+			client:UpdateStats()
+		elseif not stats[1][1] then
+			
+		end
+	end
+	client:OnSpawn()
+end
+
+
+
+
+
+
+print('Preparing client replication module')
+local replication = {}; do
+	local C3				= Color3.new
+	local BC 				= BrickColor.new
+	
+	local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	local StarterGui 		= game:GetService('StarterGui')
+	
+	local REMOTE_FUNCTION	= ReplicatedStorage:WaitForChild('RemoteFunction')
+	local REMOTE_EVENT		= ReplicatedStorage:WaitForChild('RemoteEvent')
+
+	local GUI 				= script.Parent
+	local COUNTDOWN_FRAME 	= GUI:WaitForChild('Countdown')
+	local TERMINAL_FRAME	= GUI:WaitForChild('Terminal')
+	local INTRO_FRAME		= GUI:WaitForChild('GameIntro')
+	local INFO_FRAME		= GUI:WaitForChild('GameInfo')
+	local WAIT_FRAME		= GUI:WaitForChild('Waiting')
+	
+	local PLAYER 			= game.Players.LocalPlayer
+	local CAMERA 			= game.Workspace.CurrentCamera	
+	
+	local TERMINAL_BAR 		= TERMINAL_FRAME:WaitForChild('TerminalBar')
+	local TERMINAL_STATS 	= TERMINAL_FRAME:WaitForChild('TerminalStats')
+	local AUDIO				= GUI:WaitForChild('Audio')
+	
+	local CLIENT_FUNCTION = { --NOTE: Not used yet, not often do I need to return information to the server. We will use this later.
+		
+	}
+
+	local CLIENT_EVENTS = {
+		["CaptureAttempt"] = function(team)
+			AUDIO:WaitForChild('Capturing'):Play()
+			TERMINAL_BAR:TweenSize(UDim2.new(1,0,0,20),'Out','Quad',0.4,true)
+			TERMINAL_STATS:TweenPosition(UDim2.new(0.25,0,0,20),'Out','Quad',0.4,true)	
+		end,
+		["UpdateCapture"] = function(team,percent)
+			local yieldDepth = percent/100
+			local percentFalse = math.ceil(percent)
+			TERMINAL_BAR:WaitForChild('yield').Text = string.upper(team)..' CAPTURE '..percentFalse..'%'
+			TERMINAL_BAR:WaitForChild('BarFill').Size = UDim2.new(yieldDepth,0,1,0)
+		end,
+		["CaptureSuccess"] = function(team)
+			AUDIO:WaitForChild('Capturing'):Stop()
+			TERMINAL_BAR:WaitForChild('yield').Text = ''
+			TERMINAL_BAR:WaitForChild('BarFill').Size = UDim2.new(0,0,1,0)
+			client:UpdateStats()
+			TERMINAL_BAR:TweenSize(UDim2.new(1,0,0,0),'In','Quad',0.4,true)
+			TERMINAL_STATS:TweenPosition(UDim2.new(0.25,0,0,0),'In','Quad',0.4,true)
+			if team == 'Rebels' then --Nasty hax
+				TERMINAL_STATS.RebelScore.Time.TextColor3 = C3(1,0,0)
+				TERMINAL_STATS.ImperialScore.Time.TextColor3 = C3(1,1,1)
+			elseif team == 'Imperials' then
+				TERMINAL_STATS.RebelScore.Time.TextColor3 = C3(1,1,1)
+				TERMINAL_STATS.ImperialScore.Time.TextColor3 = C3(1,0,0)
+			end
+		end,
+		["CaptureCancel"] = function(team)
+			AUDIO:WaitForChild('Capturing'):Stop()
+			TERMINAL_BAR:WaitForChild('yield').Text = ''
+			TERMINAL_BAR:WaitForChild('BarFill').Size = UDim2.new(0,0,1,0)
+			TERMINAL_BAR:TweenSize(UDim2.new(1,0,0,0),'In','Quad',0.4,true)
+			TERMINAL_STATS:TweenPosition(UDim2.new(0.25,0,0,0),'In','Quad',0.4,true)
+		end,
+		["UpdateHoldTime"] = function(remaining)
+			local rMinutes = math.floor(remaining[1]/60)
+			local rSeconds = (math.fmod(remaining[1],60) < 10) and '0'..math.fmod(remaining[1],60) or math.fmod(remaining[1],60)
+			
+			local iMinutes = math.floor(remaining[2]/60)
+			local iSeconds = (math.fmod(remaining[2],60) < 10) and '0'..math.fmod(remaining[2],60) or math.fmod(remaining[2],60)
+			
+			TERMINAL_STATS.RebelScore.Time.Text = rMinutes..':'..rSeconds
+			TERMINAL_STATS.ImperialsScore.Time.Text = iMinutes..':'..iSeconds
+		end,
+		
+		["ServerNotification"] = function(text,mType)
+			local types = { --Color,Font,IsServer
+				['Hint'] = {C3(1,1,1),Enum.Font.SourceSansLight,false};
+				['Info'] = {C3(0.5,0.5,1),Enum.Font.SourceSansBold,true};
+				['Warning'] = {C3(1,0,0),Enum.Font.SourceSansBold,true};
+			}
+			StarterGui:SetCore("ChatMakeSystemMessage", {
+				Text =  types[mType][3] and "[SERVER]: "..text or text;
+				Color = types[mType][1];
+				Font = types[mType][2];
+				FontSize = Enum.FontSize.Size18;
+			})
+		end,
+		["DebugNotification"] = function(text)
+			StarterGui:SetCore("ChatMakeSystemMessage", {
+				Text =  "[DEBUG]: "..text;
+				Color = C3(1,1,.2);
+				Font = Enum.Font.SourceSansBold;
+				FontSize = Enum.FontSize.Size18;
+			})
+		end,
+		["NewGame"] = function()
+			client:NewGame()
+			AUDIO:WaitForChild('Song04').Volume = 0.2
+			local introM = spawn(function()
+				AUDIO:WaitForChild('Song04'):Play()
+				wait(24)
+				for i = 1, 100 do
+					wait()
+					AUDIO:WaitForChild('Song04').Volume = AUDIO:WaitForChild('Song04').Volume - 0.002
+				end
+				AUDIO:WaitForChild('Song04'):Stop()
+			end)
+		end,
+		["NewRound"] = function(team,round)
+			client:NewRound(team,round)
+		end,
+		["EndGame"] = function(team,round)
+			client:EndGame(team,round)
+		end,
+	}
+	
+	
+	REMOTE_EVENT.OnClientEvent:connect(function(tag,...)
+		local port = assert(CLIENT_EVENTS[tag], 'Invalid port ')(...)
+	end)
+	
+	function REMOTE_FUNCTION.OnClientInvoke(player,tag,...)
+		local port = assert(CLIENT_EVENTS[tag], 'Invalid port ')(...)
+	end
+end
+
+
+
+
